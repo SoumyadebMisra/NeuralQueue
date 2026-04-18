@@ -9,9 +9,9 @@ sys.path.append(os.getcwd())
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-from models.Base import Base
-from models.User import User
-from models.Task import Task
+from models.base import Base
+from models.user import User
+from models.task import Task
 from models.enums import TaskStatus, TaskType
 from alembic import context
 
@@ -21,6 +21,8 @@ config = context.config
 load_dotenv()
 
 db_url = os.getenv('DATABASE_URL')
+if db_url:
+    db_url = db_url.replace('%', '%%')
 config.set_main_option('sqlalchemy.url', db_url)
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

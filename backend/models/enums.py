@@ -13,3 +13,9 @@ class TaskType(enum.Enum):
     TEXT_GENERATION = "text_generation"
     IMAGE_GENERATION = "image_generation"
     IMAGE_PROCESSING = "image_processing"
+
+class TaskPriority(enum.Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
