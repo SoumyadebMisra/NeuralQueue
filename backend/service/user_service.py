@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 from jose import jwt, JWTError
 
 from backend.repository.user_repository import UserRepository
-from backend.schemas.user import UserCreate, UserResponse
+from backend.schemas.user import UserCreate, UserResponse, UserUpdate
 from backend.core.security import verify_password, get_password_hash, create_access_token
 from backend.core.config import settings
 from backend.models.user import User
@@ -67,3 +67,17 @@ class UserService:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
 
         return await self.create_tokens(user)
+
+    async def get_user(self, user_id: str) -> User:
+        user = await self.user_repo.get(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+
+    async def update_user(self, user_id: str, user_update: UserUpdate) -> User:
+        user = await self.user_repo.get(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        update_data = user_update.model_dump(exclude_unset=True)
+        return await self.user_repo.update(user, update_data)

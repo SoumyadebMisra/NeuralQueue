@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
-from backend.schemas.user import UserCreate, UserResponse, UserLogin
+from backend.schemas.user import UserCreate, UserResponse, UserLogin, UserUpdate
 from backend.utils.get_db import get_db
 from backend.repository.user_repository import UserRepository
 from backend.service.user_service import UserService
+from backend.core.security import get_current_user
+from uuid import UUID
 
 router = APIRouter()
 
@@ -49,5 +51,16 @@ async def refresh_token(
     return await user_service.refresh_token(refresh_token)
 
 @router.get("/me", response_model=UserResponse)
-async def read_user_me():
-    raise HTTPException(status_code=501, detail="Not implemented")
+async def read_user_me(
+    current_user_id: UUID = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service)
+):
+    return await user_service.get_user(current_user_id)
+
+@router.patch("/me", response_model=UserResponse)
+async def update_user_me(
+    user_update: UserUpdate,
+    current_user_id: UUID = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service)
+):
+    return await user_service.update_user(current_user_id, user_update)

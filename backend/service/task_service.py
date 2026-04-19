@@ -6,20 +6,27 @@ from backend.repository.task_repository import TaskRepository
 from backend.schemas.task import TaskCreate
 from backend.models.task import Task
 from backend.service.redis_service import redis_service
+from backend.service.resource_predictor import predict_gpu_budget
+
 
 class TaskService:
     def __init__(self, task_repo: TaskRepository):
         self.task_repo = task_repo
 
     async def create_task(self, task_in: TaskCreate, user_id: UUID) -> Task:
+        # Predict resources based on model and prompt
+        prompt = task_in.input_text or task_in.name
+        predicted_gpu = predict_gpu_budget(task_in.model, prompt)
+        
         task_data = {
             **task_in.model_dump(),
-            "user_id": user_id
+            "user_id": user_id,
+            "gpu_budget": predicted_gpu
         }
         db_task = await self.task_repo.create(task_data)
-        
+
         stream_name = f"tasks:{db_task.priority.value}"
-        
+
         redis_payload = {
             "task_id": str(db_task.id),
             "task_type": str(db_task.task_type.value),
@@ -27,22 +34,86 @@ class TaskService:
             "gpu_budget": str(db_task.gpu_budget),
             "model": db_task.model
         }
-        
+
         await redis_service.push_to_stream(stream_name, redis_payload)
-        
+
+        await redis_service.publish_event("task_events", {
+            "type": "task_created",
+            "task_id": str(db_task.id),
+            "name": db_task.name,
+            "priority": db_task.priority.value,
+            "status": db_task.status.value,
+        })
+
         return db_task
 
     async def get_user_tasks(self, user_id: UUID, skip: int = 0, limit: int = 100) -> List[Task]:
         return await self.task_repo.get_by_user(user_id, skip=skip, limit=limit)
 
-    async def get_task(self, task_id: UUID) -> Task:
+    async def get_task(self, task_id: UUID, user_id: UUID) -> Task:
         task = await self.task_repo.get(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+        if task.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this task")
         return task
 
-    async def delete_task(self, task_id: UUID):
-        task = await self.task_repo.delete(task_id)
+    async def delete_task(self, task_id: UUID, user_id: UUID):
+        task = await self.task_repo.get(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+        if task.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this task")
+        
+        await self.task_repo.delete(task_id)
+        
+        await redis_service.publish_event("task_events", {
+            "type": "task_deleted",
+            "task_id": str(task_id),
+        })
+        
+        return task
+
+    async def retry_task(self, task_id: UUID, user_id: UUID) -> Task:
+        task = await self.task_repo.get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if task.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to retry this task")
+        
+        # Reset task state
+        from backend.models.enums import TaskStatus
+        task.status = TaskStatus.QUEUED
+        task.retries = 0
+        task.output_text = None
+        task.started_at = None
+        task.completed_at = None
+        task.latency_ms = None
+        
+        await self.task_repo.update(task, {
+            "status": task.status,
+            "retries": task.retries,
+            "output_text": task.output_text,
+            "started_at": task.started_at,
+            "completed_at": task.completed_at,
+            "latency_ms": task.latency_ms
+        })
+
+        # Re-enqueue
+        stream_name = f"tasks:{task.priority.value}"
+        redis_payload = {
+            "task_id": str(task.id),
+            "task_type": str(task.task_type.value),
+            "priority": str(task.priority.value),
+            "gpu_budget": str(task.gpu_budget),
+            "model": task.model
+        }
+        await redis_service.push_to_stream(stream_name, redis_payload)
+
+        await redis_service.publish_event("task_events", {
+            "type": "task_retried",
+            "task_id": str(task_id),
+            "status": task.status.value,
+        })
+        
         return task

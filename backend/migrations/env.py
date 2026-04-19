@@ -3,16 +3,19 @@ from logging.config import fileConfig
 import os
 from dotenv import load_dotenv
 import sys
+from pathlib import Path
 
-sys.path.append(os.getcwd())
+# Add project root to sys.path to resolve 'backend' package
+root = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(root))
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-from models.base import Base
-from models.user import User
-from models.task import Task
-from models.enums import TaskStatus, TaskType
+from backend.models.base import Base
+from backend.models.user import User
+from backend.models.task import Task
+from backend.models.enums import TaskStatus, TaskType
 from alembic import context
 
 # this is the Alembic Config object, which provides

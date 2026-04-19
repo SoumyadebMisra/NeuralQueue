@@ -1,11 +1,14 @@
 import redis.asyncio as redis_async
 import redis.exceptions as redis_exceptions
+import json
 
 from backend.core.config import settings
+
 
 class RedisService:
     def __init__(self):
         self.redis_client = None
+        self.pubsub = None
 
     async def connect(self):
         if not self.redis_client:
@@ -17,6 +20,9 @@ class RedisService:
         return self.redis_client
 
     async def disconnect(self):
+        if self.pubsub:
+            await self.pubsub.close()
+            self.pubsub = None
         if self.redis_client:
             await self.redis_client.close()
             self.redis_client = None
@@ -29,7 +35,6 @@ class RedisService:
         client = await self.connect()
         try:
             await client.xgroup_create(stream_name, group_name, id="0", mkstream=True)
-            print(f"Created consumer group {group_name} for stream {stream_name}")
         except redis_exceptions.ResponseError as e:
             if "BUSYGROUP Consumer Group name already exists" not in str(e):
                 raise e
@@ -47,6 +52,46 @@ class RedisService:
     async def acknowledge_message(self, stream_name: str, group_name: str, message_id: str):
         client = await self.connect()
         await client.xack(stream_name, group_name, message_id)
+
+    async def get_stream_length(self, stream_name: str) -> int:
+        client = await self.connect()
+        try:
+            return await client.xlen(stream_name)
+        except Exception:
+            return 0
+
+    async def read_stream(self, stream_name: str, count: int = 50):
+        client = await self.connect()
+        return await client.xrange(stream_name, count=count)
+
+    async def delete_message(self, stream_name: str, message_id: str):
+        client = await self.connect()
+        await client.xdel(stream_name, message_id)
+
+    async def get_pending_messages(self, stream_name: str, group_name: str, min_idle_ms: int = 30000, count: int = 10):
+        client = await self.connect()
+        try:
+            result = await client.xautoclaim(
+                stream_name, group_name, "recovery-worker",
+                min_idle_time=min_idle_ms, start_id="0-0", count=count
+            )
+            return result
+        except Exception:
+            return None
+
+    async def push_to_dlq(self, task_data: dict):
+        client = await self.connect()
+        await client.xadd("tasks:failed", task_data)
+
+    async def publish_event(self, channel: str, event: dict):
+        client = await self.connect()
+        await client.publish(channel, json.dumps(event))
+
+    async def subscribe(self, channel: str):
+        client = await self.connect()
+        self.pubsub = client.pubsub()
+        await self.pubsub.subscribe(channel)
+        return self.pubsub
 
 
 redis_service = RedisService()

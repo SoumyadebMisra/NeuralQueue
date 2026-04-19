@@ -13,6 +13,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     api_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, default=lambda: str(uuid.uuid4()))
     refresh_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    openai_api_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    anthropic_api_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    gemini_api_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     
     def __repr__(self):
         return f'User(id={self.id}, username={self.username}, email={self.email})'

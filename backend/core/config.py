@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+
+    # Local AI
+    OLLAMA_BINARY_PATH: Optional[str] = None
     
     class Config:
         env_file = ".env"
