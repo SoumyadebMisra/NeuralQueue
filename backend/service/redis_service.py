@@ -1,5 +1,7 @@
-import redis.asyncio as redis
-from core.config import settings
+import redis.asyncio as redis_async
+import redis.exceptions as redis_exceptions
+
+from backend.core.config import settings
 
 class RedisService:
     def __init__(self):
@@ -7,7 +9,7 @@ class RedisService:
 
     async def connect(self):
         if not self.redis_client:
-            self.redis_client = await redis.from_url(
+            self.redis_client = await redis_async.from_url(
                 f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}",
                 encoding="utf-8",
                 decode_responses=True
@@ -28,7 +30,7 @@ class RedisService:
         try:
             await client.xgroup_create(stream_name, group_name, id="0", mkstream=True)
             print(f"Created consumer group {group_name} for stream {stream_name}")
-        except redis.exceptions.ResponseError as e:
+        except redis_exceptions.ResponseError as e:
             if "BUSYGROUP Consumer Group name already exists" not in str(e):
                 raise e
 

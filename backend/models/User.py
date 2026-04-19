@@ -1,4 +1,4 @@
-from models.base import Base
+from backend.models.base import Base
 import uuid
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column

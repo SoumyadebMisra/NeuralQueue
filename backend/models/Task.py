@@ -1,9 +1,9 @@
-from models.base import Base
+from backend.models.base import Base
 import uuid
 from sqlalchemy import ForeignKey, String, DateTime, Numeric, Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
-from models.enums import TaskStatus, TaskType, TaskPriority
+from backend.models.enums import TaskStatus, TaskType, TaskPriority
 from sqlalchemy import Integer
 
 class Task(Base):

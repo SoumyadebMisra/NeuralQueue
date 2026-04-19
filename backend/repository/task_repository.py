@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from models.task import Task
-from repository.base_repository import BaseRepository
+from backend.models.task import Task
+from backend.repository.base_repository import BaseRepository
 from typing import List
 from uuid import UUID
 

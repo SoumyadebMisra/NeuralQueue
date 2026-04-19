@@ -3,14 +3,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from uuid import UUID
 
-from schemas.task import TaskCreate, TaskRead
-from utils.get_db import get_db
-from repository.task_repository import TaskRepository
-from service.task_service import TaskService
+from backend.schemas.task import TaskCreate, TaskRead
+from backend.utils.get_db import get_db
+from backend.repository.task_repository import TaskRepository
+from backend.service.task_service import TaskService
+
+from backend.core.security import get_current_user
+from backend.models.user import User
 
 router = APIRouter()
 
-# Dependency providers
 async def get_task_repo(db: AsyncSession = Depends(get_db)) -> TaskRepository:
     return TaskRepository(db)
 
@@ -20,21 +22,19 @@ async def get_task_service(repo: TaskRepository = Depends(get_task_repo)) -> Tas
 @router.post("/", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 async def create_task(
     task_in: TaskCreate, 
-    task_service: TaskService = Depends(get_task_service)
+    task_service: TaskService = Depends(get_task_service),
+    current_user: User = Depends(get_current_user)
 ):
-    # Placeholder for user_id - will be replaced by auth dependency later
-    dummy_user_id = UUID("00000000-0000-0000-0000-000000000000")
-    return await task_service.create_task(task_in, dummy_user_id)
+    return await task_service.create_task(task_in, current_user)
 
 @router.get("/", response_model=List[TaskRead])
 async def read_tasks(
     skip: int = 0, 
     limit: int = 100, 
-    task_service: TaskService = Depends(get_task_service)
+    task_service: TaskService = Depends(get_task_service),
+    current_user: User = Depends(get_current_user)
 ):
-    # Placeholder for user_id
-    dummy_user_id = UUID("00000000-0000-0000-0000-000000000000")
-    return await task_service.get_user_tasks(dummy_user_id, skip=skip, limit=limit)
+    return await task_service.get_user_tasks(current_user, skip=skip, limit=limit)
 
 @router.get("/{task_id}", response_model=TaskRead)
 async def read_task(

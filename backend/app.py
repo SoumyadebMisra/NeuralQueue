@@ -1,14 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from controller.user_controller import router as user_router
-from controller.task_controller import router as task_router
-from core.config import settings
+from backend.controller.user_controller import router as user_router
+from backend.controller.task_controller import router as task_router
+from backend.core.config import settings
 
 def create_application() -> FastAPI:
     application = FastAPI(
         title=settings.PROJECT_NAME,
         description="Backend for high-performance AI workload orchestration",
-        version=settings.VERSION
+        version=settings.VERSION,
+        redirect_slashes=False
     )
 
     application.add_middleware(

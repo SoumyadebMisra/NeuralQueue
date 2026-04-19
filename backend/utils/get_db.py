@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from core.config import settings
+from backend.core.config import settings
 from typing import AsyncGenerator
 
 # Ensure the URL uses the asyncpg driver if specified

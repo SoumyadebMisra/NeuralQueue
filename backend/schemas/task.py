@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from typing import Optional
-from models.enums import TaskStatus, TaskType, TaskPriority
+from backend.models.enums import TaskStatus, TaskType, TaskPriority
 
 class TaskBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)

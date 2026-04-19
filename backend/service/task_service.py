@@ -2,10 +2,10 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import HTTPException, status
 
-from repository.task_repository import TaskRepository
-from schemas.task import TaskCreate
-from models.task import Task
-from service.redis_service import redis_service
+from backend.repository.task_repository import TaskRepository
+from backend.schemas.task import TaskCreate
+from backend.models.task import Task
+from backend.service.redis_service import redis_service
 
 class TaskService:
     def __init__(self, task_repo: TaskRepository):

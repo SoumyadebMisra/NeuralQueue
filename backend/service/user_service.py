@@ -3,11 +3,11 @@ from fastapi import HTTPException, status
 from typing import Optional, Tuple
 from jose import jwt, JWTError
 
-from repository.user_repository import UserRepository
-from schemas.user import UserCreate, UserResponse
-from core.security import verify_password, get_password_hash, create_access_token
-from core.config import settings
-from models.user import User
+from backend.repository.user_repository import UserRepository
+from backend.schemas.user import UserCreate, UserResponse
+from backend.core.security import verify_password, get_password_hash, create_access_token
+from backend.core.config import settings
+from backend.models.user import User
 
 class UserService:
     def __init__(self, user_repo: UserRepository):
