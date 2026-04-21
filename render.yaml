@@ -4,7 +4,6 @@ services:
     name: neuralqueue-backend
     runtime: python
     region: oregon
-    plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
@@ -24,7 +23,6 @@ services:
   - type: web
     name: neuralqueue-frontend
     env: static
-    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
