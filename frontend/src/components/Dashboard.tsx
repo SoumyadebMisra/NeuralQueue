@@ -5,7 +5,7 @@ import { taskService } from '../services/taskService';
 import type { Task, TaskCreatePayload, Job, AttachmentCreatePayload, Model } from '../services/taskService';
 import { userService } from '../services/userService';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { Layers, Link, Image, File, Send, X, ListTodo } from 'lucide-react';
+import { Layers, Link, File, Send, X } from 'lucide-react';
 
 const PRIORITY_STYLES: Record<string, string> = {
     critical: 'bg-red-500/15 text-red-400 border-red-500/30',
