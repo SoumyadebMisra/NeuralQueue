@@ -164,3 +164,19 @@ class TaskService:
         })
         
         return task
+
+    async def delete_job(self, job_id: UUID, user_id: UUID):
+        job = await self.job_repo.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this job")
+        
+        await self.job_repo.delete(job_id)
+        
+        await redis_service.publish_event("task_events", {
+            "type": "job_deleted",
+            "job_id": str(job_id),
+        })
+        
+        return job

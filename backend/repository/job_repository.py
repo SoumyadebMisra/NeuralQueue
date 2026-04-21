@@ -29,3 +29,10 @@ class JobRepository(BaseRepository[Job]):
             .order_by(Job.created_at.desc())
         )
         return list(result.scalars().all())
+    async def delete(self, id: UUID) -> bool:
+        job = await self.get(id)
+        if job:
+            await self.db.delete(job)
+            await self.db.commit()
+            return True
+        return False

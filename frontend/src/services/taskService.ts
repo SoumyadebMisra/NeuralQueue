@@ -71,4 +71,5 @@ export const taskService = {
     getJobs: () => api.get<Job[]>('/api/v1/tasks/jobs'),
     getJob: (id: string) => api.get<Job>(`/api/v1/tasks/jobs/${id}`),
     createJob: (payload: JobCreatePayload) => api.post<Job>('/api/v1/tasks/jobs', payload),
+    deleteJob: (id: string) => api.delete(`/api/v1/tasks/jobs/${id}`),
 };

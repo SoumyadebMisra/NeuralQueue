@@ -124,9 +124,22 @@ export default function Dashboard() {
     };
 
     const deleteTask = async (taskId: string) => {
+        if (!confirm('Are you sure you want to delete this task?')) return;
         try {
             await taskService.deleteTask(taskId);
             setTasks(prev => prev.filter(t => t.id !== taskId));
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const deleteJob = async (jobId: string) => {
+        if (!confirm('Are you sure you want to delete this entire job campaign? All associated tasks will be lost.')) return;
+        try {
+            await taskService.deleteJob(jobId);
+            setJobs(prev => prev.filter(j => j.id !== jobId));
+            // Also refresh tasks as some might have been part of this job
+            fetchTasks();
         } catch (err) {
             console.error(err);
         }
@@ -544,8 +557,16 @@ export default function Dashboard() {
                                     return (
                                         <div key={job.id} className="bg-surface border border-slate-800 rounded-2xl p-4 space-y-3">
                                             <div className="flex justify-between items-start">
-                                                <div className="text-sm font-bold text-slate-200">{job.name}</div>
-                                                <span className="text-[10px] text-slate-500 font-mono italic">{completed}/{job.tasks.length}</span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-bold text-slate-200 truncate">{job.name}</div>
+                                                    <div className="text-[10px] text-slate-500 font-mono italic mt-0.5">{completed}/{job.tasks.length} tasks completed</div>
+                                                </div>
+                                                <button 
+                                                    onClick={() => deleteJob(job.id)}
+                                                    className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all ml-2"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
                                             </div>
                                             <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
                                                 <motion.div 

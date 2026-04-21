@@ -32,16 +32,13 @@ class LocalWorkerManager:
     async def ensure_running(self):
         status = await self.get_status()
         if status == "online":
-            print("[local-worker] Ollama is already running. If tasks appear synchronized, restart Ollama with OLLAMA_NUM_PARALLEL=4 for true concurrency.")
             return
         if status == "starting":
             return
 
-        # Check if ollama exists
         ollama_path = settings.OLLAMA_BINARY_PATH or shutil.which("ollama")
         
         if not ollama_path:
-            # Common MacOS path fallback
             potential_paths = [
                 "/usr/local/bin/ollama", 
                 "/Applications/Ollama.app/Contents/Resources/bin/ollama",
@@ -54,17 +51,17 @@ class LocalWorkerManager:
         
         if not ollama_path:
             self.status = "error"
-            print(f"[local-worker] CRITICAL: ollama binary not found. Please install from https://ollama.com or set OLLAMA_BINARY_PATH in your .env")
+            print("[local-worker] Ollama binary not found. Please install it or set OLLAMA_BINARY_PATH.")
             return
 
-        print(f"[local-worker] starting ollama serve from {ollama_path}...")
+        print(f"[local-worker] Starting Ollama from {ollama_path}")
         self.status = "starting"
         
         try:
-            # Configure Ollama for concurrency
+            # Configure for parallel execution
             env = os.environ.copy()
             env["OLLAMA_NUM_PARALLEL"] = "4"
-            env["OLLAMA_MAX_LOADED_MODELS"] = "4"
+            env["OLLAMA_MAX_LOADED_MODELS"] = "2"
             
             self.process = await asyncio.create_subprocess_exec(
                 ollama_path, "serve",
@@ -73,30 +70,26 @@ class LocalWorkerManager:
                 env=env
             )
             
-            # Poll for readiness (Wait up to 15 seconds)
-            for i in range(15):
-                await asyncio.sleep(1)
+            for i in range(10):
+                await asyncio.sleep(1.5)
                 status = await self.get_status()
                 if status == "online":
-                    print(f"[local-worker] ollama is ready after {i+1} seconds")
+                    print(f"[local-worker] Ready (concurrency enabled)")
                     return
-                print(f"[local-worker] waiting for ollama... (attempt {i+1}/15)")
             
-            print("[local-worker] timeout waiting for ollama to become responsive")
+            print("[local-worker] Initialization timeout.")
             self.status = "error"
         except Exception as e:
-            print(f"[local-worker] failed to start: {e}")
+            print(f"[local-worker] Launch failed: {e}")
             self.status = "error"
 
     async def stop(self):
         if self.process and self.process.returncode is None:
-            print("[local-worker] shutting down ollama...")
             try:
                 self.process.terminate()
                 await self.process.wait()
-                print("[local-worker] ollama stopped")
             except Exception as e:
-                print(f"[local-worker] shutdown error: {e}")
+                print(f"[local-worker] Shutdown error: {e}")
                 self.process.kill()
         self.status = "offline"
 

@@ -66,6 +66,15 @@ async def read_job(
 ):
     return await task_service.get_job(job_id, current_user)
 
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(
+    job_id: UUID,
+    task_service: TaskService = Depends(get_task_service),
+    current_user: UUID = Depends(get_current_user)
+):
+    await task_service.delete_job(job_id, current_user)
+    return None
+
 
 @router.get("/", response_model=List[TaskRead])
 async def read_tasks(

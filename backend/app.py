@@ -125,7 +125,6 @@ async def process_single_task(task_id: str, db):
         elif "gemini" in model_id:
             api_key = user.gemini_api_key
             # LiteLLM routes to Google AI Studio with gemini/ prefix.
-            # If it's still failing, we ensure the model name is exactly what AI Studio expects.
             if not task.model.startswith("gemini/"):
                 task.model = f"gemini/{task.model}"
         elif any(x in model_id for x in ["ollama", "llama", "mistral"]):
@@ -140,14 +139,9 @@ async def process_single_task(task_id: str, db):
                 task.model = f"ollama/{task.model}"
         
         if not api_key and not api_base:
-            raise ValueError(f"No credentials or local base configured for {task.model}. Please update your settings.")
+            raise ValueError(f"Credentials missing for {task.model}. Update settings.")
 
-        # Real AI dispatch with STREAMING
-        # For Gemini, LiteLLM uses the 'gemini/' prefix to route to Google AI Studio.
-        # We ensure api_key is passed correctly and force the provider to avoid Vertex.
-        
-        # Load attachments for context
-        # We use a session-managed fetch 
+        # Prepare context from attachments
         from sqlalchemy import select
         from backend.models.attachment import Attachment
         res = await repo.db.execute(select(Attachment).where(Attachment.task_id == task.id))
@@ -156,10 +150,10 @@ async def process_single_task(task_id: str, db):
         context_str = ""
         for att in attachments:
             if att.extracted_text:
-                context_str += f"\n\n--- Content from {att.file_name} ---\n{att.extracted_text}\n"
+                context_str += f"\n\n--- Source: {att.file_name} ---\n{att.extracted_text}\n"
 
         base_prompt = task.input_text or task.name
-        final_prompt = f"Context from attached sources:\n{context_str}\n\nUser Request: {base_prompt}" if context_str else base_prompt
+        final_prompt = f"Context:\n{context_str}\n\nUser Request: {base_prompt}" if context_str else base_prompt
 
         completion_kwargs = {
             "model": model_id,
@@ -170,12 +164,8 @@ async def process_single_task(task_id: str, db):
         }
 
         if api_base and "localhost" in api_base:
-            # Enforce parallelism in the local engine request
             completion_kwargs["extra_body"] = {
-                "options": {
-                    "num_parallel": 4,
-                    "num_thread": 8
-                }
+                "options": {"num_parallel": 4, "num_thread": 8}
             }
         
         if "gemini" in model_id:
@@ -215,7 +205,6 @@ async def process_single_task(task_id: str, db):
                     ttft = None
                     token_count = 0
                     
-                    # Google AI Studio returns an array of JSON objects over time, often pretty-printed
                     async for chunk in resp.aiter_text():
                         buffer += chunk
                         buffer = buffer.lstrip().lstrip("[").lstrip(",").lstrip()
@@ -368,11 +357,10 @@ async def worker_loop(worker_name: str, stream_name: str, concurrency: int):
                 semaphore.release()
                 continue
 
-            for stream_name, stream_messages in messages:
+            for s_name, stream_messages in messages:
                 for message_id, message_data in stream_messages:
                     task_id = message_data.get("task_id")
                     
-                    # Spawn task in background
                     async def run_and_ack(tid, msg_id, sn):
                         try:
                             async with async_session_maker() as db:
@@ -380,14 +368,13 @@ async def worker_loop(worker_name: str, stream_name: str, concurrency: int):
                                     await process_single_task(tid, db)
                                     await redis_service.acknowledge_message(sn, WORKER_GROUP, msg_id)
                                 except Exception as e:
-                                    print(f"[worker] error on {tid}: {e}")
+                                    print(f"[worker] task failed ({tid}): {e}")
                                     await handle_failure(tid, db, message_data)
                                     await redis_service.acknowledge_message(sn, WORKER_GROUP, msg_id)
                         finally:
-                            # Always release the slot regardless of outcome
                             semaphore.release()
                                 
-                    asyncio.create_task(run_and_ack(task_id, message_id, stream_actual))
+                    asyncio.create_task(run_and_ack(task_id, message_id, s_name))
 
         except asyncio.CancelledError:
             break
