@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Activity, CheckCircle2, Clock, AlertTriangle, Wifi, WifiOff, Zap, Cpu, RotateCcw, Trash2, Settings, Key, MessageSquare, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { taskService } from '../services/taskService';
-import type { Task, TaskCreatePayload, Job, AttachmentCreatePayload } from '../services/taskService';
+import type { Task, TaskCreatePayload, Job, AttachmentCreatePayload, Model } from '../services/taskService';
 import { userService } from '../services/userService';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { Layers, Link, Image, File, Send, X, ListTodo } from 'lucide-react';
@@ -22,39 +22,30 @@ const STATUS_STYLES: Record<string, { bg: string; icon: React.ReactNode }> = {
     failed: { bg: 'bg-red-500/10 text-red-400', icon: <AlertTriangle className="w-4 h-4" /> },
 };
 
-const MODELS = [
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', weight: 0.2 },
-    { id: 'gemini/gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Preview)', provider: 'Google', weight: 0.8 },
-    { id: 'gemini/gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite (Preview)', provider: 'Google', weight: 0.2 },
-    { id: 'gemini/gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'Google', weight: 0.2 },
-    { id: 'ollama/llama3', name: 'Llama 3 (Local)', provider: 'Local', weight: 1.2 },
-    { id: 'ollama/mistral', name: 'Mistral (Local)', provider: 'Local', weight: 1.0 },
-];
-
 const WS_URL = (import.meta.env.VITE_WS_URL as string) || 'ws://localhost:8000/ws/events';
 
 export default function Dashboard() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [jobs, setJobs] = useState<Job[]>([]);
     const [name, setName] = useState('');
-    const [model, setModel] = useState(MODELS[0].id);
+    const [models, setModels] = useState<Model[]>([]);
+    const [model, setModel] = useState('');
     const [inputText, setInputText] = useState('');
     const [priority, setPriority] = useState('low');
     const [attachments, setAttachments] = useState<AttachmentCreatePayload[]>([]);
     const [linkInput, setLinkInput] = useState('');
-    
+
     // Bulk Mode States
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [jobName, setJobName] = useState('');
     const [bulkTasks, setBulkTasks] = useState<TaskCreatePayload[]>([]);
-    
+
     const [submitting, setSubmitting] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [openaiKey, setOpenaiKey] = useState('');
     const [anthropicKey, setAnthropicKey] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-    const [localWorkerStatus, setLocalWorkerStatus] = useState('offline');
 
     const { lastEvent, connected } = useWebSocket(WS_URL);
 
@@ -76,6 +67,18 @@ export default function Dashboard() {
         }
     };
 
+    const fetchModels = async () => {
+        try {
+            const { data } = await taskService.getModels();
+            setModels(data);
+            if (data.length > 0 && !model) {
+                setModel(data[0].id);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const fetchUser = async () => {
         try {
             const { data } = await userService.getMe();
@@ -88,6 +91,7 @@ export default function Dashboard() {
     };
 
     useEffect(() => {
+        fetchModels();
         fetchTasks();
         fetchJobs();
         fetchUser();
@@ -97,13 +101,11 @@ export default function Dashboard() {
         if (!lastEvent) return;
 
         if (lastEvent.type === 'task_chunk') {
-            setTasks(prev => prev.map(t => 
-                t.id === lastEvent.task_id 
-                ? { ...t, output_text: (t.output_text || '') + lastEvent.chunk, status: 'processing' } 
-                : t
+            setTasks(prev => prev.map(t =>
+                t.id === lastEvent.task_id
+                    ? { ...t, output_text: (t.output_text || '') + lastEvent.chunk, status: 'processing' }
+                    : t
             ));
-        } else if (lastEvent.type === 'local_worker_status') {
-            setLocalWorkerStatus(lastEvent.status);
         } else {
             fetchTasks();
             fetchJobs();
@@ -112,8 +114,8 @@ export default function Dashboard() {
 
     const saveKeys = async () => {
         try {
-            await userService.updateMe({ 
-                openai_api_key: openaiKey, 
+            await userService.updateMe({
+                openai_api_key: openaiKey,
                 anthropic_api_key: anthropicKey,
                 gemini_api_key: geminiKey
             });
@@ -171,7 +173,7 @@ export default function Dashboard() {
     const addTaskToBulk = () => {
         if (!name || !model || !inputText) return;
         if (bulkTasks.length >= 20) return;
-        
+
         const newTask: TaskCreatePayload = {
             name,
             model,
@@ -179,7 +181,7 @@ export default function Dashboard() {
             priority,
             attachments: [...attachments],
         };
-        
+
         setBulkTasks(prev => [...prev, newTask]);
         setName('');
         setInputText('');
@@ -240,7 +242,7 @@ export default function Dashboard() {
     const completedCount = tasks.filter(t => t.status === 'completed').length;
 
     // Calculate predicted scale (local UI simulation)
-    const selectedModel = MODELS.find(m => m.id === model);
+    const selectedModel = models.find(m => m.id === model);
     const predictedScale = Math.max(1, Math.min(16, Math.floor((selectedModel?.weight || 0.5) * 5 + inputText.length / 300)));
 
     return (
@@ -251,18 +253,14 @@ export default function Dashboard() {
                     <p className="text-slate-500 text-sm italic">Intelligent AI Resource Orchestrator</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <button 
+                    <button
                         onClick={() => setShowSettings(!showSettings)}
                         className={`p-2.5 rounded-xl border transition-all ${showSettings ? 'bg-slate-800 border-slate-700 text-sky-400' : 'bg-surface border-slate-800 text-slate-400 hover:text-slate-200'}`}
                     >
                         <Settings className="w-5 h-5" />
                     </button>
-                    
+
                     <div className="flex flex-col items-end gap-1.5">
-                        <div className={`flex items-center gap-2 text-[9px] font-mono uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border leading-none ${localWorkerStatus === 'online' ? 'text-emerald-400 bg-emerald-500/5 border-emerald-500/20' : localWorkerStatus === 'starting' ? 'text-amber-400 bg-amber-500/5 border-amber-500/20' : 'text-slate-500 bg-slate-500/5 border-slate-500/20'}`}>
-                            <Cpu className={`w-2.5 h-2.5 ${localWorkerStatus === 'starting' ? 'animate-pulse' : ''}`} />
-                            Local: {localWorkerStatus}
-                        </div>
                         <div className={`flex items-center gap-2 text-[9px] font-mono uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border leading-none ${connected ? 'text-sky-400 bg-sky-500/5 border-sky-500/20' : 'text-red-400 bg-red-500/5 border-red-500/20'}`}>
                             {connected ? <Wifi className="w-2.5 h-2.5" /> : <WifiOff className="w-2.5 h-2.5" />}
                             Orchestrator: {connected ? 'Live' : 'Offline'}
@@ -273,7 +271,7 @@ export default function Dashboard() {
 
             <AnimatePresence>
                 {showSettings && (
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
@@ -316,7 +314,7 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             <div className="flex justify-end pt-2">
-                                <button 
+                                <button
                                     onClick={saveKeys}
                                     className="px-6 py-2 bg-sky-500 hover:bg-sky-400 text-slate-900 font-bold rounded-xl transition-all active:scale-95 text-sm"
                                 >
@@ -347,13 +345,13 @@ export default function Dashboard() {
                 <div className="md:col-span-1 space-y-4">
                     <div className="bg-surface border border-slate-800 p-6 rounded-3xl space-y-4 shadow-xl sticky top-6">
                         <div className="flex justify-between items-center bg-slate-900/50 p-1 rounded-xl border border-slate-800 mb-2">
-                            <button 
+                            <button
                                 onClick={() => setIsBulkMode(false)}
                                 className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${!isBulkMode ? 'bg-slate-800 text-sky-400 shadow-inner' : 'text-slate-500 hover:text-slate-300'}`}
                             >
                                 <Zap className="w-3.5 h-3.5" /> Single
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setIsBulkMode(true)}
                                 className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${isBulkMode ? 'bg-slate-800 text-emerald-400 shadow-inner' : 'text-slate-500 hover:text-slate-300'}`}
                             >
@@ -389,7 +387,7 @@ export default function Dashboard() {
                                         onChange={(e) => setModel(e.target.value)}
                                         className="w-full bg-background border border-emerald-500/20 rounded-xl px-4 py-2.5 text-sm focus:ring-1 focus:ring-emerald-500 focus:outline-none appearance-none cursor-pointer"
                                     >
-                                        {MODELS.map(m => (
+                                        {models.map(m => (
                                             <option key={m.id} value={m.id}>{m.name}</option>
                                         ))}
                                     </select>
@@ -399,7 +397,7 @@ export default function Dashboard() {
 
                         <div className="space-y-4 pt-2">
                             <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold px-1">{isBulkMode ? 'Add Task to Job' : 'Task Details'}</div>
-                            
+
                             <div className="space-y-1.5">
                                 <label className="text-[10px] text-slate-500 uppercase tracking-wider ml-1">Objective</label>
                                 <input
@@ -418,7 +416,7 @@ export default function Dashboard() {
                                         onChange={(e) => setModel(e.target.value)}
                                         className="w-full bg-background border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-accent focus:outline-none appearance-none cursor-pointer"
                                     >
-                                        {MODELS.map(m => (
+                                        {models.map(m => (
                                             <option key={m.id} value={m.id}>{m.name}</option>
                                         ))}
                                     </select>
@@ -448,7 +446,7 @@ export default function Dashboard() {
                                             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addAttachment())}
                                         />
                                     </div>
-                                    <button 
+                                    <button
                                         type="button"
                                         onClick={addAttachment}
                                         className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-all"
@@ -518,7 +516,7 @@ export default function Dashboard() {
                                                             <div className="text-xs font-semibold text-slate-300 truncate">{t.name}</div>
                                                             <div className="text-[9px] text-slate-500 truncate mt-1">{t.input_text}</div>
                                                         </div>
-                                                        <button 
+                                                        <button
                                                             onClick={() => removeBulkTask(i)}
                                                             className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                                                         >
@@ -561,7 +559,7 @@ export default function Dashboard() {
                                                     <div className="text-sm font-bold text-slate-200 truncate">{job.name}</div>
                                                     <div className="text-[10px] text-slate-500 font-mono italic mt-0.5">{completed}/{job.tasks.length} tasks completed</div>
                                                 </div>
-                                                <button 
+                                                <button
                                                     onClick={() => deleteJob(job.id)}
                                                     className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all ml-2"
                                                 >
@@ -569,7 +567,7 @@ export default function Dashboard() {
                                                 </button>
                                             </div>
                                             <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-                                                <motion.div 
+                                                <motion.div
                                                     initial={{ width: 0 }}
                                                     animate={{ width: `${progress}%` }}
                                                     className="h-full bg-emerald-500"
@@ -657,10 +655,10 @@ export default function Dashboard() {
                                                     </div>
                                                 </div>
                                             </div>
-                                            
+
                                             <AnimatePresence>
                                                 {isExpanded && (
-                                                    <motion.div 
+                                                    <motion.div
                                                         initial={{ opacity: 0, height: 0 }}
                                                         animate={{ opacity: 1, height: 'auto' }}
                                                         exit={{ opacity: 0, height: 0 }}
@@ -672,10 +670,10 @@ export default function Dashboard() {
                                                                     <div className="text-[10px] text-slate-600 uppercase tracking-widest font-bold">Context Sources</div>
                                                                     <div className="flex flex-wrap gap-2">
                                                                         {task.attachments.map(att => (
-                                                                            <a 
-                                                                                key={att.id} 
-                                                                                href={att.file_url} 
-                                                                                target="_blank" 
+                                                                            <a
+                                                                                key={att.id}
+                                                                                href={att.file_url}
+                                                                                target="_blank"
                                                                                 rel="noreferrer"
                                                                                 className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-[11px] text-sky-400 hover:border-sky-500/30 transition-all"
                                                                             >

@@ -17,9 +17,8 @@ class Settings(BaseSettings):
     # Redis
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
-
-    # Local AI
-    OLLAMA_BINARY_PATH: Optional[str] = None
+    REDIS_PASSWORD: Optional[str] = None
+    REDIS_TLS: bool = False
     
     class Config:
         env_file = "backend/.env"

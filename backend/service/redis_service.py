@@ -12,8 +12,12 @@ class RedisService:
 
     async def connect(self):
         if not self.redis_client:
+            protocol = "rediss" if settings.REDIS_TLS else "redis"
+            password_part = f":{settings.REDIS_PASSWORD}@" if settings.REDIS_PASSWORD else ""
+            url = f"{protocol}://{password_part}{settings.REDIS_HOST}:{settings.REDIS_PORT}"
+            
             self.redis_client = await redis_async.from_url(
-                f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}",
+                url,
                 encoding="utf-8",
                 decode_responses=True
             )

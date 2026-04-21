@@ -11,8 +11,13 @@ from backend.repository.job_repository import JobRepository
 from backend.repository.attachment_repository import AttachmentRepository
 from backend.service.task_service import TaskService
 from backend.core.security import get_current_user
+from backend.core.models_config import SUPPORTED_MODELS
 
 router = APIRouter()
+
+@router.get("/models")
+async def get_models():
+    return SUPPORTED_MODELS
 
 
 async def get_task_repo(db: AsyncSession = Depends(get_db)) -> TaskRepository:

@@ -61,7 +61,16 @@ export interface JobCreatePayload {
     capacity_limit?: number;
 }
 
+export interface Model {
+    id: string;
+    name: string;
+    provider: string;
+    weight: number;
+    description?: string;
+}
+
 export const taskService = {
+    getModels: () => api.get<Model[]>('/api/v1/tasks/models'),
     getTasks: () => api.get<Task[]>('/api/v1/tasks/'),
     createTask: (payload: TaskCreatePayload) => api.post<Task>('/api/v1/tasks/', payload),
     getTask: (id: string) => api.get<Task>(`/api/v1/tasks/${id}`),
