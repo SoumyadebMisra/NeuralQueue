@@ -21,14 +21,12 @@ services:
         value: "true"
 
   # Frontend Dashboard
-  - type: web
+  - type: static_site
     name: neuralqueue-frontend
-    runtime: static
-    region: oregon
     plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    publishPath: dist
     envVars:
       - key: VITE_API_BASE_URL
         fromService:
