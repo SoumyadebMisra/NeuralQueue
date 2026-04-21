@@ -36,13 +36,11 @@ class UserService:
 
     async def create_tokens(self, user: User) -> dict:
         access_token = create_access_token(subject=user.id)
-        # Use a longer expiry for refresh tokens
         refresh_token = create_access_token(
             subject=user.id, 
             expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 24)
         )
         
-        # Save refresh token to DB
         await self.user_repo.update(user, {"refresh_token": refresh_token})
         
         return {

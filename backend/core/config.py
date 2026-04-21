@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     OLLAMA_BINARY_PATH: Optional[str] = None
     
     class Config:
-        env_file = ".env"
+        env_file = "backend/.env"
         case_sensitive = True
 
 settings = Settings()

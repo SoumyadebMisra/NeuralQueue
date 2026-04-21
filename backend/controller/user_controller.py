@@ -17,12 +17,18 @@ async def get_user_repo(db: AsyncSession = Depends(get_db)) -> UserRepository:
 async def get_user_service(repo: UserRepository = Depends(get_user_repo)) -> UserService:
     return UserService(repo)
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register")
 async def register_user(
     user_in: UserCreate, 
     user_service: UserService = Depends(get_user_service)
 ):
-    return await user_service.register_user(user_in)
+    new_user = await user_service.register_user(user_in)
+    result = await user_service.create_tokens(new_user)
+
+    return {
+        "access_token": result["access_token"],
+        "token_type": "bearer"
+        }
 
 @router.post("/login")
 async def login(
