@@ -21,7 +21,7 @@ services:
         value: "true"
 
   # Frontend Dashboard
-  - type: static_site
+  - type: static
     name: neuralqueue-frontend
     plan: free
     rootDir: frontend
