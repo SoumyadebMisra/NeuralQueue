@@ -1,7 +1,7 @@
 from backend.models.base import Base
 import uuid
 from sqlalchemy import ForeignKey, String, DateTime, Numeric, Enum as SqlEnum, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
 from typing import Optional
 from backend.models.enums import TaskStatus, TaskType, TaskPriority
@@ -25,10 +25,15 @@ class Task(Base):
     latency_ms: Mapped[float] = mapped_column(Numeric(precision=10, scale=2), nullable=True)
     retries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    job_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('job.id', ondelete="SET NULL"), nullable=True, index=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     
+    job = relationship("Job", back_populates="tasks")
+    attachments = relationship("Attachment", back_populates="task", cascade="all, delete-orphan")
+
     def __repr__(self):
         return f'Task(id={self.id}, name={self.name}, status={self.status}, priority={self.priority})'

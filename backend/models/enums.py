@@ -19,3 +19,8 @@ class TaskPriority(enum.Enum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+
+class AttachmentType(enum.Enum):
+    LINK = "link"
+    FILE = "file"
+    PHOTO = "photo"

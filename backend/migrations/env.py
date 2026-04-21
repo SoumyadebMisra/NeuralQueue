@@ -12,10 +12,7 @@ sys.path.append(str(root))
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-from backend.models.base import Base
-from backend.models.user import User
-from backend.models.task import Task
-from backend.models.enums import TaskStatus, TaskType
+from backend.models import Base
 from alembic import context
 
 # this is the Alembic Config object, which provides

@@ -31,7 +31,10 @@ class LocalWorkerManager:
 
     async def ensure_running(self):
         status = await self.get_status()
-        if status == "online" or status == "starting":
+        if status == "online":
+            print("[local-worker] Ollama is already running. If tasks appear synchronized, restart Ollama with OLLAMA_NUM_PARALLEL=4 for true concurrency.")
+            return
+        if status == "starting":
             return
 
         # Check if ollama exists
@@ -58,10 +61,16 @@ class LocalWorkerManager:
         self.status = "starting"
         
         try:
+            # Configure Ollama for concurrency
+            env = os.environ.copy()
+            env["OLLAMA_NUM_PARALLEL"] = "4"
+            env["OLLAMA_MAX_LOADED_MODELS"] = "4"
+            
             self.process = await asyncio.create_subprocess_exec(
                 ollama_path, "serve",
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                env=env
             )
             
             # Poll for readiness (Wait up to 15 seconds)

@@ -28,6 +28,13 @@ PRIORITY_WEIGHTS = {"critical": 100, "high": 60, "medium": 30, "low": 10}
 SCHEDULER_GROUP = "scheduler_group"
 WORKER_GROUP = "neuralqueue_workers"
 MAX_RETRIES = 3
+WORKER_CONCURRENCY_LOCAL = 4
+WORKER_CONCURRENCY_CLOUD = 20
+
+
+def is_local_model(model: str) -> bool:
+    m = model.lower()
+    return any(x in m for x in ["ollama", "llama", "mistral", "local"])
 
 
 def calculate_score(task_data: dict, message_id: str) -> float:
@@ -53,6 +60,7 @@ async def scheduler_loop():
             candidates = []
             for priority in PRIORITIES:
                 stream = f"tasks:{priority}"
+                await redis_service.create_consumer_group(stream, SCHEDULER_GROUP) # Ensure group exists
                 messages = await redis_service.read_stream(stream, count=50)
                 for msg_id, msg_data in messages:
                     candidates.append({
@@ -64,11 +72,14 @@ async def scheduler_loop():
 
             if candidates:
                 candidates.sort(key=lambda c: c["score"], reverse=True)
-                for candidate in candidates[:5]:
-                    await redis_service.push_to_stream("tasks:ready", candidate["data"])
+                for candidate in candidates[:10]:
+                    model_name = candidate["data"].get("model", "")
+                    ready_stream = "tasks:ready:local" if is_local_model(model_name) else "tasks:ready:cloud"
+                    
+                    await redis_service.push_to_stream(ready_stream, candidate["data"])
                     await redis_service.delete_message(candidate["stream"], candidate["message_id"])
                     task_id = candidate["data"].get("task_id", "?")
-                    print(f"[scheduler] dispatched {task_id[:8]}... (score: {candidate['score']:.1f})")
+                    print(f"[scheduler] dispatched {task_id[:8]} to {ready_stream} (score: {candidate['score']:.1f})")
 
             await asyncio.sleep(2)
         except asyncio.CancelledError:
@@ -135,13 +146,37 @@ async def process_single_task(task_id: str, db):
         # For Gemini, LiteLLM uses the 'gemini/' prefix to route to Google AI Studio.
         # We ensure api_key is passed correctly and force the provider to avoid Vertex.
         
+        # Load attachments for context
+        # We use a session-managed fetch 
+        from sqlalchemy import select
+        from backend.models.attachment import Attachment
+        res = await repo.db.execute(select(Attachment).where(Attachment.task_id == task.id))
+        attachments = res.scalars().all()
+        
+        context_str = ""
+        for att in attachments:
+            if att.extracted_text:
+                context_str += f"\n\n--- Content from {att.file_name} ---\n{att.extracted_text}\n"
+
+        base_prompt = task.input_text or task.name
+        final_prompt = f"Context from attached sources:\n{context_str}\n\nUser Request: {base_prompt}" if context_str else base_prompt
+
         completion_kwargs = {
-            "model": task.model,
-            "messages": [{"role": "user", "content": task.input_text or task.name}],
+            "model": model_id,
+            "messages": [{"role": "user", "content": final_prompt}],
             "api_key": api_key,
             "api_base": api_base,
             "stream": True
         }
+
+        if api_base and "localhost" in api_base:
+            # Enforce parallelism in the local engine request
+            completion_kwargs["extra_body"] = {
+                "options": {
+                    "num_parallel": 4,
+                    "num_thread": 8
+                }
+            }
         
         if "gemini" in model_id:
             if not api_key:
@@ -149,30 +184,36 @@ async def process_single_task(task_id: str, db):
             
             import httpx
             pure_model = task.model.split("/")[-1]
-            # Since we now use precision-verified names from the frontend, 
-            # we can pass them directly to the API endpoints.
             target_model = pure_model
             
-            # Try v1 first, then fallback to v1beta 
-            url = f"https://generativelanguage.googleapis.com/v1/models/{target_model}:streamGenerateContent?key={api_key}"
+            url_to_use = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?key={api_key}"
             payload = {
-                "contents": [{"parts": [{"text": task.input_text or task.name}]}],
+                "contents": [{"parts": [{"text": final_prompt}]}],
                 "generationConfig": {"temperature": 0.7}
             }
             
             async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json=payload, timeout=60.0) # Dummy for initial check? No, use stream.
-                url_to_use = url
-                if resp.status_code == 404:
-                    url_to_use = url.replace("/v1/", "/v1beta/")
-                
                 async with client.stream("POST", url_to_use, json=payload, timeout=60.0) as resp:
+                    if resp.status_code != 200:
+                        # Fallback if v1beta fails for some reason
+                        if resp.status_code == 400 or resp.status_code == 404:
+                             url_v1 = url_to_use.replace("/v1beta/", "/v1/")
+                             async with client.stream("POST", url_v1, json=payload, timeout=60.0) as resp2:
+                                 if resp2.status_code != 200:
+                                     err_body = await resp2.aread()
+                                     raise Exception(f"Gemini API Error ({resp2.status_code}): {err_body.decode()}")
+                                 resp = resp2 # Use the v1 response
+                        else:
+                            err_body = await resp.aread()
+                            raise Exception(f"Gemini API Error ({resp.status_code}): {err_body.decode()}")
                     if resp.status_code != 200:
                         err_body = await resp.aread()
                         raise Exception(f"Gemini API Error ({resp.status_code}): {err_body.decode()}")
                     full_output = ""
                     decoder = json.JSONDecoder()
                     buffer = ""
+                    ttft = None
+                    token_count = 0
                     
                     # Google AI Studio returns an array of JSON objects over time, often pretty-printed
                     async for chunk in resp.aiter_text():
@@ -189,6 +230,11 @@ async def process_single_task(task_id: str, db):
                                     parts = obj["candidates"][0].get("content", {}).get("parts", [])
                                     if parts and "text" in parts[0]:
                                         chunk_text = parts[0]["text"]
+                                        if chunk_text:
+                                            if ttft is None:
+                                                ttft = (time.time() - start_time) * 1000
+                                            token_count += len(chunk_text.split()) or 1 # Simple word count as token proxy
+                                            
                                         full_output += chunk_text
                                         await redis_service.publish_event("task_events", {
                                             "type": "task_chunk",
@@ -202,26 +248,42 @@ async def process_single_task(task_id: str, db):
                                 print(f"[worker] Unexpected Gemini processing error: {e}")
                                 break
                     
+                    duration = time.time() - start_time
+                    latency_ms = int(duration * 1000)
+                    tps = token_count / duration if duration > 0 else 0
+                    
                     await repo.update(task, {
                         "status": TaskStatus.COMPLETED,
                         "output_text": full_output,
                         "completed_at": datetime.now(UTC),
-                        "latency_ms": int((time.time() - start_time) * 1000)
+                        "latency_ms": latency_ms
                     })
                     
                     await redis_service.publish_event("task_events", {
                         "type": "task_completed",
                         "task_id": str(task.id),
-                        "output_text": full_output
+                        "output_text": full_output,
+                        "metrics": {
+                            "ttft_ms": round(ttft, 2) if ttft else None,
+                            "tps": round(tps, 2),
+                            "latency_ms": latency_ms,
+                            "provider": "google/gemini"
+                        }
                     })
                     return # Task complete
 
         response = await litellm.acompletion(**completion_kwargs)
         
         full_text = ""
+        ttft = None
+        token_count = 0
         async for chunk in response:
             content = chunk.choices[0].delta.content
             if content:
+                if ttft is None:
+                    ttft = (time.time() - start_time) * 1000
+                token_count += len(content.split()) or 1
+                
                 full_text += content
                 await redis_service.publish_event("task_events", {
                     "type": "task_chunk",
@@ -239,14 +301,25 @@ async def process_single_task(task_id: str, db):
         raise e 
 
     latency = (time.time() - start_time) * 1000
+    duration = time.time() - start_time
+    tps = token_count / duration if duration > 0 else 0
+    provider = "local/ollama" if "localhost" in (api_base or "") else "cloud/litellm"
+    
     task.completed_at = datetime.now(UTC)
     task.latency_ms = latency
     await db.commit()
 
     await redis_service.publish_event("task_events", {
-        "type": "task_completed", "task_id": task_id, "latency_ms": round(latency, 2),
+        "type": "task_completed", 
+        "task_id": task_id, 
+        "metrics": {
+            "ttft_ms": round(ttft, 2) if ttft else None,
+            "tps": round(tps, 2),
+            "latency_ms": round(latency, 2),
+            "provider": provider
+        }
     })
-    print(f"[worker] completed {task_id[:8]}... in {latency:.0f}ms")
+    print(f"[worker] completed {task_id[:8]}... in {latency:.0f}ms (TPS: {tps:.1f})")
 
 
 async def handle_failure(task_id: str, db, message_data: dict):
@@ -274,35 +347,52 @@ async def handle_failure(task_id: str, db, message_data: dict):
         })
 
 
-async def worker_loop(worker_name: str):
-    await redis_service.create_consumer_group("tasks:ready", WORKER_GROUP)
-    streams = {"tasks:ready": ">"}
+async def worker_loop(worker_name: str, stream_name: str, concurrency: int):
+    await redis_service.create_consumer_group(stream_name, WORKER_GROUP)
+    streams = {stream_name: ">"}
+    semaphore = asyncio.Semaphore(concurrency)
+
+    print(f"[worker] {worker_name} listening on {stream_name} (concurrency: {concurrency})")
 
     while True:
         try:
+            # Backpressure: Wait for a free concurrency slot before fetching next task
+            await semaphore.acquire()
+            
             messages = await redis_service.read_from_group(
                 group_name=WORKER_GROUP, consumer_name=worker_name,
                 streams=streams, count=1, block=2000,
             )
+            
             if not messages:
+                semaphore.release()
                 continue
 
             for stream_name, stream_messages in messages:
                 for message_id, message_data in stream_messages:
                     task_id = message_data.get("task_id")
-                    async with async_session_maker() as db:
+                    
+                    # Spawn task in background
+                    async def run_and_ack(tid, msg_id, sn):
                         try:
-                            await process_single_task(task_id, db)
-                            await redis_service.acknowledge_message(stream_name, WORKER_GROUP, message_id)
-                        except Exception as e:
-                            print(f"[worker] error on {task_id}: {e}")
-                            await handle_failure(task_id, db, message_data)
-                            await redis_service.acknowledge_message(stream_name, WORKER_GROUP, message_id)
+                            async with async_session_maker() as db:
+                                try:
+                                    await process_single_task(tid, db)
+                                    await redis_service.acknowledge_message(sn, WORKER_GROUP, msg_id)
+                                except Exception as e:
+                                    print(f"[worker] error on {tid}: {e}")
+                                    await handle_failure(tid, db, message_data)
+                                    await redis_service.acknowledge_message(sn, WORKER_GROUP, msg_id)
+                        finally:
+                            # Always release the slot regardless of outcome
+                            semaphore.release()
+                                
+                    asyncio.create_task(run_and_ack(task_id, message_id, stream_actual))
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[worker] loop error: {e}")
+            print(f"[worker] loop error on {worker_name}: {e}")
             await asyncio.sleep(5)
 
 
@@ -335,10 +425,13 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(redis_event_listener()),
         asyncio.create_task(monitor_local_worker()),
         asyncio.create_task(scheduler_loop()),
-        asyncio.create_task(worker_loop("worker-1")),
-        asyncio.create_task(worker_loop("worker-2")),
+        # Local Worker Fleet
+        asyncio.create_task(worker_loop("worker-local-1", "tasks:ready:local", WORKER_CONCURRENCY_LOCAL)),
+        # Cloud Worker Fleet
+        asyncio.create_task(worker_loop("worker-cloud-1", "tasks:ready:cloud", WORKER_CONCURRENCY_CLOUD)),
+        asyncio.create_task(worker_loop("worker-cloud-2", "tasks:ready:cloud", WORKER_CONCURRENCY_CLOUD)),
     ]
-    print("[app] scheduler + 2 workers + local worker monitor running")
+    print(f"[app] orchestrator running (Local-Cap: {WORKER_CONCURRENCY_LOCAL}, Cloud-Cap: {WORKER_CONCURRENCY_CLOUD * 2})")
     yield
     print("[app] stopping tasks...")
     for t in tasks:
