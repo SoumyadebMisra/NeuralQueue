@@ -1,57 +1,11 @@
 services:
-  # 1. API Gateway (REST API)
+  # Backend Orchestrator (Modular Monolith)
   - type: web
-    name: neuralqueue-api
+    name: neuralqueue-backend
     runtime: python
     region: oregon
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: pip install -r backend/requirements.txt && cd backend && alembic upgrade head
     startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
-    envVars: &shared-env
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_HOST
-        sync: false
-      - key: REDIS_PORT
-        sync: false
-      - key: REDIS_PASSWORD
-        sync: false
-      - key: REDIS_TLS
-        value: "true"
-
-  # 2. Event Bridge (WebSockets)
-  - type: web
-    name: neuralqueue-event-bridge
-    runtime: python
-    region: oregon
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: uvicorn backend.services.event_bridge.main:app --host 0.0.0.0 --port $PORT
-    envVars: *shared-env
-
-  # 3. Scheduler (Background Worker)
-  - type: worker
-    name: neuralqueue-scheduler
-    runtime: python
-    region: oregon
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: python -m backend.services.scheduler.main
-    envVars: *shared-env
-
-  # 4. Recovery Loop (Background Worker)
-  - type: worker
-    name: neuralqueue-recovery
-    runtime: python
-    region: oregon
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: python -m backend.services.recovery.main
-    envVars: *shared-env
-
-  # 5. Worker Fleet (Background Worker - Scale this up for more compute)
-  - type: worker
-    name: neuralqueue-worker
-    runtime: python
-    region: oregon
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: python -m backend.services.worker.main
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -64,4 +18,4 @@ services:
       - key: REDIS_TLS
         value: "true"
       - key: WORKER_CONCURRENCY
-        value: "20"
+        value: "10"
