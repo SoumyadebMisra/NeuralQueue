@@ -22,7 +22,10 @@ const STATUS_STYLES: Record<string, { bg: string; icon: React.ReactNode }> = {
     failed: { bg: 'bg-red-500/10 text-red-400', icon: <AlertTriangle className="w-4 h-4" /> },
 };
 
-const WS_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/^http/, 'ws') + '/ws/events';
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
+const WS_URL = import.meta.env.VITE_WS_BASE_URL
+    ? `${import.meta.env.VITE_WS_BASE_URL}/ws/events`
+    : API_URL.replace(/^http/, 'ws').replace(':8000', ':8001') + '/ws/events';
 
 export default function Dashboard() {
     const [tasks, setTasks] = useState<Task[]>([]);

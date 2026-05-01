@@ -1,0 +1,92 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: nq
+      POSTGRES_PASSWORD: nq_secret
+      POSTGRES_DB: neuralqueue
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nq -d neuralqueue"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api-gateway:
+    build: .
+    # Run DB migrations first, then start the API Gateway
+    command: bash -c "cd backend && alembic upgrade head && cd .. && uvicorn backend.app:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    environment: &env
+      # Override the backend/.env file settings for local docker-compose
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_TLS: "false"
+      DATABASE_URL: postgresql+asyncpg://nq:nq_secret@postgres:5432/neuralqueue
+      JWT_SECRET: dev-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  scheduler:
+    build: .
+    command: python -m backend.services.scheduler.main
+    environment: *env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: .
+    command: python -m backend.services.worker.main
+    environment:
+      <<: *env
+      WORKER_CONCURRENCY: "20"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    deploy:
+      replicas: 4
+
+  recovery:
+    build: .
+    command: python -m backend.services.recovery.main
+    environment: *env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  event-bridge:
+    build: .
+    command: uvicorn backend.services.event_bridge.main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    environment: *env
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:
+  redis_data:

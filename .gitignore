@@ -16,3 +16,11 @@ venv
 .env.development.local
 .env.test.local
 .env.production.local
+.env
+backend/.env
+scratch/
+.agent_logs/
+node_modules/
+dist/
+build/
+.next/

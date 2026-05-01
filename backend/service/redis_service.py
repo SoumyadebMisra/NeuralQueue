@@ -97,5 +97,48 @@ class RedisService:
         await self.pubsub.subscribe(channel)
         return self.pubsub
 
+    async def acquire_task_lock(self, task_id: str, owner: str, ttl: int = 300) -> bool:
+        """
+        Acquire a distributed lock for a task using SET NX EX.
+        Returns True if lock acquired, False if another worker holds it.
+        TTL (default 300s) acts as a safety net — if the holder crashes,
+        the lock auto-expires so recovery can reclaim the task.
+        """
+        client = await self.connect()
+        result = await client.set(f"task_lock:{task_id}", owner, nx=True, ex=ttl)
+        return result is not None
+
+    async def renew_task_lock(self, task_id: str, owner: str, ttl: int = 300) -> bool:
+        """
+        Extend the TTL of a lock, but ONLY if we still own it.
+        Used by the watchdog to prevent expiry during long-running tasks.
+        """
+        client = await self.connect()
+        lua_script = """
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+            return redis.call("expire", KEYS[1], ARGV[2])
+        else
+            return 0
+        end
+        """
+        result = await client.eval(lua_script, 1, f"task_lock:{task_id}", owner, str(ttl))
+        return result == 1
+
+    async def release_task_lock(self, task_id: str, owner: str) -> bool:
+        """
+        Release a task lock, but ONLY if we are the owner.
+        Uses a Lua script for atomicity (check-and-delete in one round-trip).
+        """
+        client = await self.connect()
+        lua_script = """
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+            return redis.call("del", KEYS[1])
+        else
+            return 0
+        end
+        """
+        result = await client.eval(lua_script, 1, f"task_lock:{task_id}", owner)
+        return result == 1
+
 
 redis_service = RedisService()

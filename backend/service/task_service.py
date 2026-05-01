@@ -63,7 +63,8 @@ class TaskService:
             "status": db_task.status.value,
         })
 
-        return db_task
+        # Re-fetch with eager loading to ensure relationships (like attachments) are populated for serialization
+        return await self.task_repo.get(db_task.id)
 
     async def create_bulk_job(self, job_in: JobCreate, user_id: UUID) -> Job:
         if len(job_in.tasks) > job_in.capacity_limit:
@@ -163,7 +164,8 @@ class TaskService:
             "status": task.status.value,
         })
         
-        return task
+        # Re-fetch with eager loading for serialization
+        return await self.task_repo.get(task.id)
 
     async def delete_job(self, job_id: UUID, user_id: UUID):
         job = await self.job_repo.get(job_id)

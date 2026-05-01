@@ -1,12 +1,12 @@
 services:
-  # Backend Orchestrator
+  # 1. API Gateway (REST API)
   - type: web
-    name: neuralqueue-backend
+    name: neuralqueue-api
     runtime: python
     region: oregon
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
-    envVars:
+    envVars: &shared-env
       - key: DATABASE_URL
         sync: false
       - key: REDIS_HOST
@@ -18,15 +18,41 @@ services:
       - key: REDIS_TLS
         value: "true"
 
-  # Frontend Dashboard
+  # 2. Event Bridge (WebSockets)
   - type: web
-    name: neuralqueue-frontend
-    env: static
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: ./frontend/dist
+    name: neuralqueue-event-bridge
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.services.event_bridge.main:app --host 0.0.0.0 --port $PORT
+    envVars: *shared-env
+
+  # 3. Scheduler (Background Worker)
+  - type: worker
+    name: neuralqueue-scheduler
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m backend.services.scheduler.main
+    envVars: *shared-env
+
+  # 4. Recovery Loop (Background Worker)
+  - type: worker
+    name: neuralqueue-recovery
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m backend.services.recovery.main
+    envVars: *shared-env
+
+  # 5. Worker Fleet (Background Worker - Scale this up for more compute)
+  - type: worker
+    name: neuralqueue-worker
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m backend.services.worker.main
     envVars:
-      - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: neuralqueue-backend
-          property: host
+      - <<: *shared-env
+      - key: WORKER_CONCURRENCY
+        value: "20"

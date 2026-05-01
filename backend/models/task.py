@@ -24,6 +24,7 @@ class Task(Base):
     status: Mapped[TaskStatus] = mapped_column(SqlEnum(TaskStatus, native_enum=False), nullable=False, default=TaskStatus.QUEUED)
     latency_ms: Mapped[float] = mapped_column(Numeric(precision=10, scale=2), nullable=True)
     retries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_by: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     job_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('job.id', ondelete="SET NULL"), nullable=True, index=True)
 
