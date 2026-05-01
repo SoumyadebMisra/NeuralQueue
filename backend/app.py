@@ -26,8 +26,10 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(scheduler_loop()),
         asyncio.create_task(recovery_loop()),
         # Run 2 workers locally in the same process
-        asyncio.create_task(worker_loop("worker-1", "tasks:ready", 10)),
-        asyncio.create_task(worker_loop("worker-2", "tasks:ready", 10)),
+        asyncio.create_task(worker_loop("worker-1", "tasks:ready", 5)),
+        asyncio.create_task(worker_loop("worker-2", "tasks:ready", 5)),
+        asyncio.create_task(worker_loop("worker-3", "tasks:ready", 5)),
+        asyncio.create_task(worker_loop("worker-4", "tasks:ready", 5)),
     ]
     
     yield
