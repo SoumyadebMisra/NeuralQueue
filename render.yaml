@@ -53,6 +53,15 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: python -m backend.services.worker.main
     envVars:
-      - <<: *shared-env
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_TLS
+        value: "true"
       - key: WORKER_CONCURRENCY
         value: "20"
